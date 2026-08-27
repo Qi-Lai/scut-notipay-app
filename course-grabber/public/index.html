@@ -24,7 +24,20 @@
 
     <!-- 配置 / 登录 -->
     <section class="card" id="sec-login">
-      <h2>1. 配置并登录教务</h2>
+      <h2>1. 登录教务</h2>
+      <p class="hint">支持两种方式：<b>微信扫码登录</b>（推荐，方便）或 <b>账号+密码+验证码</b>。</p>
+
+      <!-- 微信扫码登录（默认推荐） -->
+      <div class="qr-row">
+        <img id="qr-img" alt="登录二维码" style="display:none" />
+      </div>
+      <div class="actions">
+        <button class="btn primary" id="btn-scan">微信扫码登录</button>
+        <span id="scan-msg" class="msg"></span>
+      </div>
+
+      <hr class="sep" />
+      <p class="hint"><b>或用账号密码登录：</b></p>
       <div class="row">
         <label>学号 <input id="username" placeholder="学号" /></label>
         <label>查询密码 <input id="password" type="password" placeholder="查询密码" /></label>
@@ -47,7 +60,7 @@
       </div>
 
       <div class="actions">
-        <button class="btn primary" id="btn-login">登录教务</button>
+        <button class="btn" id="btn-login">账号密码登录</button>
         <span id="login-msg" class="msg"></span>
       </div>
     </section>

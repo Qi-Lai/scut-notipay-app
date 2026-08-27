@@ -36,6 +36,9 @@ input:focus { border-color: var(--primary); }
 #captcha-img { height: 40px; border: 1px solid var(--border); border-radius: 6px; }
 .captcha-wrap { display: flex; gap: 6px; align-items: center; }
 .msg { color: var(--muted); font-size: 12px; align-self: center; margin-left: 10px; }
+.qr-row { display: flex; justify-content: center; padding: 6px 0 2px; }
+#qr-img { width: 200px; height: 200px; border: 1px solid var(--border); border-radius: 8px; padding: 6px; background: #fff; }
+.sep { border: none; border-top: 1px solid var(--border); margin: 14px 0; }
 .actions { display: flex; gap: 10px; margin-top: 8px; align-items: center; }
 .hint { color: var(--muted); font-size: 12px; margin-bottom: 10px; }
 

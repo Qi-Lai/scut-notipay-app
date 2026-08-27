@@ -102,6 +102,45 @@ function renderSubmitStatus(map) {
 }
 
 // ---- events ----
+$('btn-scan').addEventListener('click', async () => {
+  $('login-msg').textContent = '正在生成二维码...';
+  const r = await api('/api/login/scan', { method: 'POST' });
+  if (r.ok && r.qrContent) {
+    window._qrContent = r.qrContent;
+    $('scan-msg').textContent = '请用微信扫一扫登录（约 1 分钟内有效）';
+    renderQr(r.qrContent);
+    startQrPoll();
+  } else {
+    $('login-msg').textContent = r.error || '发起扫码失败';
+  }
+});
+
+function renderQr(content) {
+  // 用二维码图片 API 渲染（goqr.me），无需本地 QR 库
+  const img = $('qr-img');
+  img.src = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(content)}`;
+  img.style.display = 'block';
+}
+
+function startQrPoll() {
+  if (window._qrPoll) clearInterval(window._qrPoll);
+  $('login-msg').textContent = '等待扫码...';
+  // 轮询后端（后端阻塞到扫码成功，但为了不卡前端，用短轮询探测状态）
+  window._qrPoll = setInterval(async () => {
+    const r = await api('/api/login/scan-poll', { method: 'POST' });
+    if (r.ok) {
+      clearInterval(window._qrPoll);
+      window._qrPoll = null;
+      $('login-msg').textContent = '登录成功！';
+      await refreshState();
+    } else if (r.error && /超时/.test(r.error)) {
+      clearInterval(window._qrPoll);
+      window._qrPoll = null;
+      $('scan-msg').textContent = '二维码已失效，请重新生成';
+    }
+  }, 1500);
+}
+
 $('btn-login').addEventListener('click', async () => {
   $('login-msg').textContent = '正在发起登录...';
   await api('/api/config', { method: 'POST', body: JSON.stringify({ username: $('username').value.trim(), password: $('password').value, proxy: $('proxy').value.trim() }) });
@@ -113,8 +152,7 @@ $('btn-login').addEventListener('click', async () => {
     // 保存 lt/execution 在内存变量，提交时带上
     window._flow = r;
   } else if (r.ok) {
-    // 无验证码/扫码时直接提示
-    $('login-msg').textContent = r.captchaBase64 ? '' : '登录发起成功，若无验证码输入框请刷新页面用扫码登录。';
+    $('login-msg').textContent = '登录发起成功，请用微信扫码登录（更推荐）。';
   } else {
     $('login-msg').textContent = r.error || '登录发起失败';
   }

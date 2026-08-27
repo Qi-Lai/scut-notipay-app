@@ -30,6 +30,14 @@ async function handleApi(req, res, url, body) {
       const r = await service.submitLogin(body);
       return json({ ok: true, ...r });
     }
+    if (p === '/api/login/scan') {
+      const r = await service.startQrLogin();
+      return json({ ok: true, ...r });
+    }
+    if (p === '/api/login/scan-poll') {
+      const r = await service.pollQrLogin();
+      return json({ ok: true, ...r });
+    }
     if (p === '/api/wait/start') {
       await service.startWait();
       return json({ ok: true });

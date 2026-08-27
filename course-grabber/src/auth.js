@@ -2,69 +2,30 @@ const { createFetch, extractCookie, toHttps } = require('./http');
 
 const JW_BASE = 'http://jw2018.jw.scut.edu.cn';
 const SSO_BASE = 'https://sso.scut.edu.cn';
+// 微信服务号 appid（从 CAS 页面提取）
+const WX_APPID = 'wx39f121ed798af736';
+// 微信 OAuth 回调到 CAS 的地址
+const WX_REDIRECT = `${SSO_BASE}/cas/scutwxsso`;
 
-/**
- * 教务登录流程：
- *   访问教务 drioLogin -> 跳 SSO CAS -> 用户输账号密码+验证码 -> CAS 发 ticket
- *   -> 回教务 drioLogin?ticket=... -> ticketlogin -> 拿到教务 JSESSIONID
- *
- * 由于 CAS 登录需要图形/短信验证码，本模块把「验证码交给前端显示、用户输入」，
- * 这里分两步：
- *   1. beginLogin(config)  -> 打开 CAS 登录页，返回 {ht, execution, lt, captchaImage?} 供前端呈现
- *   2. submitLogin(config, {username,password,lt,execution,captcha?,code?}) -> 拿教务 JSESSIONID
- *
- * 说明：教务 CAS 支持扫码免密，也可用账号密码+验证码。这里先实现账号密码路径，
- * 验证码图片由前端展示，用户输入后回传。
- */
+/* ================= 账号密码 + 验证码 登录 ================= */
 
-/**
- * 第一步：发起登录，返回 CAS 登录页需要的字段（lt/execution）和验证码图片（如有）。
- */
+/** 第一步：发起账号密码登录，返回 lt/execution（供前端呈现验证码输入） */
 async function beginLogin(config) {
   const fetchFn = createFetch(config.proxy);
-  // 先访问教务入口，引出 CAS 登录页
-  const entryUrl = `${JW_BASE}/sso/driotlogin`;
-  let res = await fetchFn(entryUrl, { redirect: 'manual' });
-  // 302 到 CAS
-  let loc = res.headers.get('location');
-  if (loc && loc.startsWith('http:')) loc = toHttps(loc);
-  // 或直接构造 CAS URL
-  const casUrl = loc || `${SSO_BASE}/cas/login?service=${encodeURIComponent(`${JW_BASE}/sso/driotlogin`)}`;
-
-  res = await fetchFn(casUrl);
+  const service = encodeURIComponent(`${JW_BASE}/sso/driotlogin`);
+  const casUrl = `${SSO_BASE}/cas/login?service=${service}`;
+  const res = await fetchFn(casUrl);
   const html = await res.text();
-
-  // 从登录页抓 lt / execution 隐藏字段
   const lt = (html.match(/id="lt"[^>]*value="([^"]+)"/) || [])[1] || '';
   const execution = (html.match(/name="execution"[^>]*value="([^"]+)"/) || [])[1] || '';
-  // 提取表单 action（默认 /cas/login + service）
-  const action = (html.match(/<form[^>]*action="([^"]+)"/) || [])[1] || '';
-
-  // 尝试抓验证码图片（如果有 <img id="captcha"> 或 /cas/captcha 接口）
-  const captchaUrl = (html.match(/<img[^>]*id="[^"]*[Cc]aptcha[^"]*"[^>]*src="([^"]+)"/) || [])[1] || '';
-  let captchaBase64 = '';
-  if (captchaUrl) {
-    try {
-      const capRes = await fetchFn(captchaUrl.startsWith('http') ? captchaUrl : `${SSO_BASE}${captchaUrl}`);
-      const buf = Buffer.from(await capRes.arrayBuffer());
-      captchaBase64 = `data:image/jpeg;base64,${buf.toString('base64')}`;
-    } catch (e) {
-      // ignore
-    }
-  }
-
-  return { lt, execution, captchaBase64, casUrl, service: encodeURIComponent(`${JW_BASE}/sso/driotlogin`), hasFlow: !!(lt && execution) };
+  return { lt, execution, casUrl, service, hasFlow: !!(lt && execution) };
 }
 
-/**
- * 第二步：提交登录（POST CAS login），成功则返回教务 JSESSIONID。
- */
-async function submitLogin(config, { username, password, lt, execution, captcha, code }) {
+/** 第二步：提交账号密码 + 验证码，登录成功拿教务 JSESSIONID */
+async function submitLogin(config, { username, password, lt, execution, captcha }) {
   const fetchFn = createFetch(config.proxy);
-  // 拼接 POST 目标：CAS action 或 /cas/login?service=...
   const service = encodeURIComponent(`${JW_BASE}/sso/driotlogin`);
   const actionUrl = `${SSO_BASE}/cas/login?service=${service}`;
-
   const form = new URLSearchParams();
   form.append('username', username);
   form.append('password', password);
@@ -72,40 +33,93 @@ async function submitLogin(config, { username, password, lt, execution, captcha,
   if (execution) form.append('execution', execution);
   form.append('_eventId', 'submit');
   if (captcha) form.append('captcha', captcha);
-  if (code) form.append('code', code); // 短信验证码字段（若表单用这个名）
 
-  let res = await fetchFn(actionUrl, {
+  const res = await fetchFn(actionUrl, {
     method: 'POST',
     redirect: 'manual',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: form.toString()
   });
-
-  // 登录成功会 302 回教务 drioLogin?ticket=ST-xxx
   if (res.status !== 302) {
     const text = await res.text();
-    // 若返回 200 可能是验证码错误，把提示带回
-    const err = text.match(/验证码|错误|失败|不正确|请输/);
-    throw new Error(err ? '登录失败，请检查验证码/密码' : `登录失败 HTTP ${res.status}`);
+    throw new Error(/验证码|错误|失败|不正确/.test(text) ? '登录失败，请检查验证码/密码' : `登录失败 HTTP ${res.status}`);
   }
-
-  let loc = res.headers.get('location') || '';
-  // 拿 ticket（ST-xxx）
+  const loc = res.headers.get('location') || '';
   const ticket = (loc.match(/ticket=(ST-[^&]+)/) || [])[1] || '';
+  return await finishLogin(config, ticket);
+}
 
-  // 访问教务 drioLogin?ticket=... -> 302 到 ticketlogin -> 建会话
-  res = await fetchFn(`${JW_BASE}/sso/driotlogin${ticket ? `?ticket=${ticket}` : ''}`, { redirect: 'manual' });
+/* ================= 微信扫码登录 ================= */
+
+/** 生成 uuid */
+function genUuid() {
+  let d = Date.now();
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (d + Math.random() * 16) % 16 | 0;
+    d = Math.floor(d / 16);
+    return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+  });
+}
+
+/**
+ * 发起扫码登录：生成 uuid + 微信 OAuth 二维码内容。
+ * 前端用二维码内容渲染二维码（微信扫码 → 回调 scutwxsso → CAS 登录 → 返回 ticket）。
+ */
+async function startQrLogin(config) {
+  const uuid = genUuid();
+  // 微信 OAuth authorize URL，微信扫码后回调 sso 的 scutwxsso?state=<uuid>
+  // 二维码内容就是 URL，扫码->微信内置 OAuth。
+  const qrContent =
+    `https://open.weixin.qq.com/connect/oauth2/authorize?appid=${WX_APPID}` +
+    `&redirect_uri=${encodeURIComponent(WX_REDIRECT)}&response_type=code&scope=snsapi_base&state=${uuid}#wechat_redirect`;
+  return { uuid, qrContent };
+}
+
+/**
+ * 轮询扫码状态：每 pollMs 一次，直到非 -1/0（扫码成功）或超时。
+ * 返回 result（扫码成功返回 ticket 标识），超时返回 null。
+ */
+async function pollQr(config, uuid, { timeoutMs = 60000, pollMs = 1500 } = {}) {
+  const fetchFn = createFetch(config.proxy);
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    // 用 jsonp 语义的 jsonpcallback 参数（CAS 返回 cb(result)）
+    const res = await fetchFn(`${SSO_BASE}/cas/scutqqcheck?uuid=${uuid}&jsonpcallback=cb`);
+    const text = await res.text();
+    // text 形如 "cb(-1)" / "cb(0)" / "cb(ST-xxx)" 或 "cb(...)"
+    const m = text.match(/cb\(([^)]*)\)/);
+    if (m) {
+      const val = m[1];
+      if (val !== '-1' && val !== '0' && val !== 'null' && val !== '') {
+        return val; // 扫码成功（通常是 ticket）
+      }
+    }
+    await new Promise((r) => setTimeout(r, pollMs));
+  }
+  return null;
+}
+
+/** 用 ticket（扫码或账号密码登录得到）走教务登录，拿 JSESSIONID */
+async function finishLogin(config, ticket) {
+  const fetchFn = createFetch(config.proxy);
+  if (!ticket) throw new Error('未获取到 ticket，登录失败');
+  let res = await fetchFn(`${JW_BASE}/sso/driotlogin?ticket=${ticket}`, { redirect: 'manual' });
   let jsessionid = extractCookie(res.headers.get('set-cookie'), 'JSESSIONID');
   if (!jsessionid && res.status === 302) {
-    // 302 到 ticketlogin，跟随
-    loc = toHttps(res.headers.get('location')) || '';
+    const loc = toHttps(res.headers.get('location')) || '';
     res = await fetchFn(loc, { redirect: 'manual' });
     jsessionid = extractCookie(res.headers.get('set-cookie'), 'JSESSIONID');
   }
-  if (!jsessionid) {
-    throw new Error('登录失败：未获取到教务会话(JSESSIONID)');
-  }
-  return { jsessionid };
+  if (!jsessionid) throw new Error('登录失败：未获取到教务会话(JSESSIONID)');
+  return { jsessionid, ticket };
 }
 
-module.exports = { beginLogin, submitLogin, JW_BASE, SSO_BASE };
+module.exports = {
+  beginLogin,
+  submitLogin,
+  startQrLogin,
+  pollQr,
+  finishLogin,
+  JW_BASE,
+  SSO_BASE
+};

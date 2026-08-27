@@ -48,6 +48,36 @@ async function submitLogin({ username, password, lt, execution, captcha }) {
   }
 }
 
+/** 发起微信扫码登录，返回 uuid + 二维码内容（前端渲染） */
+async function startQrLogin() {
+  const cfg = store.get();
+  const res = await auth.startQrLogin(cfg.config);
+  store.setLogin({ qrUuid: res.uuid, qrContent: res.qrContent });
+  store.addLog('info', '已生成登录二维码，请用微信扫码');
+  return res;
+}
+
+/**
+ * 轮询扫码结果。前端调这个接口会【阻塞直到扫码成功或超时】。
+ * 成功后自动走教务登录，返回 jsessionid。
+ */
+async function pollQrLogin() {
+  const cfg = store.get();
+  const uuid = cfg.login.qrUuid;
+  if (!uuid) throw new Error('未发起扫码');
+  const result = await auth.pollQr(cfg.config, uuid, { timeoutMs: 60000, pollMs: 1500 });
+  if (!result) {
+    store.addLog('warn', '扫码超时，请重试');
+    throw new Error('扫码超时');
+  }
+  store.addLog('success', '扫码成功，正在登录...');
+  const { jsessionid } = await auth.finishLogin(cfg.config, result);
+  store.setLogin({ jsessionid });
+  store.setPhase('WAIT');
+  store.addLog('success', '登录成功，已获得教务会话');
+  return { jsessionid };
+}
+
 /** 检查一次是否开放（返回课程数） */
 async function checkOpen() {
   const cfg = store.get();
@@ -202,6 +232,8 @@ function stopSubmit() {
 module.exports = {
   beginLogin,
   submitLogin,
+  startQrLogin,
+  pollQrLogin,
   checkOpen,
   startWait,
   stopWait,
