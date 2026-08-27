@@ -11,13 +11,14 @@
 ## 目录
 
 - [1. 校园网整体架构](#1-校园网整体架构)
-- [2. 统一身份认证（CAS / SSO）](#2-统一身份认证cas--sso)
-- [3. 门户 my.scut.edu.cn](#3-门户-myscuteducn)
-- [4. 教务系统（jwglxt / 正方）](#4-教务系统jwglxt--正方)
-- [5. 宿舍水电费系统（dfyc）](#5-宿舍水电费系统dfyc)
-- [6. 登录态与-JSESSIONID](#6-登录态与-jsessionid)
-- [7. 两套后端入口：`-sp` vs 无 `-sp`](#7-两套后端入口-sp-vs-无-sp)
-- [8. 对接注意事项](#8-对接注意事项)
+- [2. 校外接入：VPN（EasyConnect）与统一认证的关系](#2-校外接入vpneasyconnect与统一认证的关系)
+- [3. 统一身份认证（CAS / SSO）](#3-统一身份认证cas--sso)
+- [4. 门户 my.scut.edu.cn](#4-门户-myscuteducn)
+- [5. 教务系统（jwglxt / 正方）](#5-教务系统jwglxt--正方)
+- [6. 宿舍水电费系统（dfyc）](#6-宿舍水电费系统dfyc)
+- [7. 登录态与-JSESSIONID](#7-登录态与-jsessionid)
+- [8. 两套后端入口：`-sp` vs 无 `-sp`](#8-两套后端入口-sp-vs-无-sp)
+- [9. 对接注意事项](#9-对接注意事项)
 
 ---
 
@@ -42,15 +43,64 @@
 
 ---
 
-## 2. 统一身份认证（CAS / SSO）
+## 2. 校外接入：VPN（EasyConnect）与统一认证的关系
 
-### 2.1 认证中心
+校外（非校园网环境）访问校内系统，需先经过 **SSL VPN 接入**。这是「网络可达性」层，与「统一 CAS 认证」层是**两件串行的事**，各管一段。
+
+### 2.1 接入点与客户端
+
+- **VPN 地址**：`https://sslvpn2.scut.edu.cn`
+- **客户端**：深信服 **EasyConnect**（`ssl`+`vpn` 域名、登录门户 `por/login_psw.csp`、客户端探测脚本等特征可确认是 EasyConnect）
+- **定位**：让校外设备在逻辑上「回到」校园网，从而能访问到校内地址（`my.scut.edu.cn`、`jw2018.jw.scut.edu.cn` 等）。
+
+### 2.2 双层模型（实测确认）
+
+```
+校外环境
+  │
+  ▼
+① VPN 接入（EasyConnect）            ← 管「网络可达性」
+  │  账号 + 密码 + 3分钟 SSLVPN 专用验证码 → 建立加密隧道
+  ▼
+② 访问校内系统（门户/教务）            ← 到达后系统检测未登录 → 跳统一认证
+  │
+  ▼
+③ 统一身份认证（CAS）                ← 管「身份授权」
+  │  账号 + 密码 + 90秒 验证码 → CASTGC → ticket → 进入系统
+  ▼
+④ 访问具体功能（门户首页、成绩、课表…）
+```
+
+> **关键事实（实测）**：VPN 连接成功后，访问移动门户等校内网站**仍会再走一次统一认证**。因为 VPN 只解决「能不能连到」（网络层），不解决「是否已验证身份」（应用层）。校内系统总会在未登录会话时跳回 `sso.scut.edu.cn/cas/login`。
+
+### 2.3 VPN 与统一认证的关系（账号同源、服务独立）
+
+| 对比项 | 统一认证（CAS / sso.scut.edu.cn） | SSL VPN（sslvpn2.scut.edu.cn） |
+|--------|----------------------------------|-------------------------------|
+| 账号 | 学号（校统一身份库） | 学号（**同一个**） |
+| 密码 | 同一套 | 同一套 |
+| 验证码 | **90 秒**（短时效） | **3 分钟、标注 (SSLVPN)** |
+| 发送渠道 | 学校微信服务号 | **同**一个微信服务号 |
+| 认证端点(CAS) | 是（标准 ticket 流程） | **否**（EasyConnect 门户自己的登录逻辑） |
+
+**结论**：账号密码和验证码渠道**同源**（共用校统一身份库 + 同一个微信服务号），但**认证服务是两套独立端点**——CAS 走 ticket，VPN 走 EasyConnect 门户。**「账号密码一样」≠「走同一个 CAS」**。
+
+### 2.4 对项目对接的意义
+
+- **工具只需处理「应用层 CAS 登录」**（访问门户/教务时主动登录），这是已探明并成型的核心。
+- **VPN 层不建议自动化**：VPN 登录用自己的账号体系 + 3分钟专用验证码，时效短、涉及 VPN 账号，且是用户网络环境的事。应作为文档提示（「请先连接校园网或学校 SSL VPN」），由用户自行处理网络可达性。
+
+---
+
+## 3. 统一身份认证（CAS / SSO）
+
+### 3.1 认证中心
 
 - **域名**：`sso.scut.edu.cn`
 - **登录页**：`https://sso.scut.edu.cn/cas/login?service=<回调地址>`
 - **类型**：Apereo CAS（5.x，从 `execution` 字段判断）
 
-### 2.2 CAS 登录流程
+### 3.2 CAS 登录流程
 
 1. 访问业务系统（如 `my.scut.edu.cn/up/?service=...`）→ 302 跳转到 `sso.scut.edu.cn/cas/login?service=...`
 2. **GET** 登录页 → 解析出动态隐藏字段：`lt`（Login Ticket）+ `execution`
@@ -65,13 +115,13 @@
 4. 认证成功后，CAS 302 回 `service` 参数指定的 URL，并**附带 `ticket`**（`/up/?service=...&ticket=ST-xxx`）
 5. 业务系统拿 `ticket` 去 CAS **校验**（`/cas/serviceValidate?ticket=...&service=...`），换回用户名等属性 → 建立业务会话
 
-### 2.3 表单字段（实测确认）
+### 3.3 表单字段（实测确认）
 
 - `<form id="loginForm" action="/cas/login?service=..." method="post">`
 - 隐藏字段：`lt`（形如 `LT-2715050-xxx-cas`）、`execution`（形如 `e1s1`）、`_eventId=submit`
 - 页面含 `captcha` / `slide` 验证 —— **对接时需处理验证码/滑块**（这是主要难点）
 
-### 2.4 关键参数
+### 3.4 关键参数
 
 | 参数 | 说明 |
 |------|------|
@@ -81,7 +131,7 @@
 
 ---
 
-## 3. 门户 my.scut.edu.cn
+## 4. 门户 my.scut.edu.cn
 
 - **入口**：`https://my.scut.edu.cn` → 301 到 `/up` → 302 到 `/up/`
 - **登录保护**：未登录访问会 302 到 `sso.scut.edu.cn/cas/login?service=<up/...>`
@@ -89,18 +139,18 @@
 
 ---
 
-## 4. 教务系统（jwglxt / 正方）
+## 5. 教务系统（jwglxt / 正方）
 
 教务是校园网最重要的功能系统之一，采用**正方教务系统（ZFSoft / 教学管理信息服务平台）**框架（`jwglxt` 前缀、`zftal-ui` 静态资源、`login_slogin.html` 等特征可确认）。
 
-### 4.1 入口与认证
+### 5.1 入口与认证
 
 - **入口域名**：`https://jw2018.jw.scut.edu.cn`
 - **CAS service**：`http://jw2018.jw.scut.edu.cn/sso/driotlogin`
   - 访问 `jw2018.jw.scut.edu.cn` → JS 跳到 `sso.scut.edu.cn/cas/login?service=<上值>`
   - 拿到 `ticket` 后访问 `?ticket=ST-xxx` → 服务端校验 → 进入教务
 
-### 4.2 SSO 流转到教务（关键链路，实测确认）
+### 5.2 SSO 流转到教务（关键链路，实测确认）
 
 登录一次拿到 `CASTGC` 后，访问教务 service 会自动发 ticket，最终在教务系统落地：
 
@@ -116,7 +166,7 @@ GET /jwglxt/ticketlogin?uid=<学号>&timestamp=<秒级时间戳>&verify=<签名>
 - **`ticketlogin`** 是教务教务系统的登录凭证接口：`uid`（学号）+ `timestamp`（秒级）+ `verify`（服务端签名，HMAC/MD5）。`verify` 由服务端依据 uid+timestamp+密钥计算，客户端无法伪造。
 - 进入后教务系统在 `jw2018.jw.scut.edu.cn` 域种下 **`JSESSIONID`**（HttpOnly）+ `clwz_blc_pst_JWC_xxx`（persistence，负载均衡粘滞）。
 
-### 4.3 核心数据接口（实测确认，均在 `jw2018.jw.scut.edu.cn/jwglxt` 下）
+### 5.3 核心数据接口（实测确认，均在 `jw2018.jw.scut.edu.cn/jwglxt` 下）
 
 | 接口 | 方法 | 说明 |
 |------|------|------|
@@ -127,7 +177,7 @@ GET /jwglxt/ticketlogin?uid=<学号>&timestamp=<秒级时间戳>&verify=<签名>
 > 请求示例（在已登录会话内）：`/jwglxt/kbcx/xskbcx_cxXsKb.html?xnm=2025&xqm=3` → 返回含 `XH`/`XM`/`BJMC`/`XNMC`/`KCMS` 等字段的学生课表 JSON。
 > `xnm` = 学年（如 2025 表示 2025-2026 学年），`xqm` = 学期（1/2/3 对应秋/春/夏等，实际以返回为准）。每次请求需带教务 `JSESSIONID` cookie。
 
-### 4.4 对接要点
+### 5.4 对接要点
 
 - 课表/成绩接口需 **`X-Requested-With: XMLHttpRequest`** 头，并带教务 `JSESSIONID` cookie。
 - `xnm`/`xqm` 需先获取当前学年学期（可从 `index_initMenu` 返回或课表返回的 `XNMC`/`XQM` 推断）。
@@ -135,9 +185,9 @@ GET /jwglxt/ticketlogin?uid=<学号>&timestamp=<秒级时间戳>&verify=<签名>
 
 ---
 
-## 5. 宿舍水电费系统（dfyc）
+## 6. 宿舍水电费系统（dfyc）
 
-宿舍水电费是校园网的一个业务子系统，有两套后端入口（见第 7 节）：
+宿舍水电费是校园网的一个业务子系统，有两套后端入口（见第 8 节）：
 
 | 域名 | 作用 |
 |------|------|
@@ -155,7 +205,7 @@ GET /jwglxt/ticketlogin?uid=<学号>&timestamp=<秒级时间戳>&verify=<签名>
 
 ---
 
-## 6. 登录态与 JSESSIONID
+## 7. 登录态与 JSESSIONID
 
 业务系统（如 dfyc）的登录态是**服务端 Session**，客户端靠 **`JSESSIONID` Cookie** 维持。
 
@@ -166,7 +216,7 @@ GET /jwglxt/ticketlogin?uid=<学号>&timestamp=<秒级时间戳>&verify=<签名>
 
 ---
 
-## 7. 两套后端入口：`-sp` vs 无 `-sp`
+## 8. 两套后端入口：`-sp` vs 无 `-sp`
 
 同一个水电费业务系统有两个入口，**实测确认是两套不同后端**：
 
@@ -181,7 +231,7 @@ GET /jwglxt/ticketlogin?uid=<学号>&timestamp=<秒级时间戳>&verify=<签名>
 
 ---
 
-## 8. 对接注意事项
+## 9. 对接注意事项
 
 1. **先掌握统一认证（CAS）**：不管接哪个业务，多半要先过 `sso.scut.edu.cn` 的 CAS 登录。`lt` / `execution` 动态生成、页面有滑块验证码，是主要门槛。
 2. **认准 `-sp` 版**：查询、充值都用 `-sp` 路径，避免老版后端的数据下发慢/丢单。
