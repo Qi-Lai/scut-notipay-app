@@ -211,6 +211,19 @@
         </div>
 
         <div class="card">
+          <div class="card-header"><h2>数据存储位置</h2></div>
+          <div class="help-body">
+            <p>应用数据（<code>config.json</code> 与 <code>data.db</code>）当前保存在：</p>
+            <p class="muted"><code id="data-dir-path">加载中…</code></p>
+            <p class="muted" id="data-dir-hint">默认位置在系统盘（AppData），如需释放 C 盘空间或方便备份，可更改到其它磁盘。</p>
+            <div class="settings-actions">
+              <button class="btn" id="btn-open-data">打开当前目录</button>
+              <button class="btn primary" id="btn-migrate-data">更改存储位置…</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
           <div class="card-header"><h2>数据安全</h2></div>
           <div class="help-body">
             <p>学生卡片密码使用 <b>AES-256-GCM</b> 加密后存储在本地 SQLite 数据库中，加密密钥保存在数据目录的 <code>config.json</code> 内（首次启动自动生成）。</p>

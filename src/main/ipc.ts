@@ -1,13 +1,14 @@
-import { app, ipcMain, shell, BrowserWindow } from 'electron';
+import { app, ipcMain, shell, BrowserWindow, dialog } from 'electron';
 import { Bot } from '../core/bot';
 import { getConfigStore, getConfig, type AppConfig } from '../core/config';
-import { getDb, getScheduler } from '../core/database';
+import { getDb, getScheduler, closeDatabase } from '../core/database';
 import { obtainToken as login } from '../core/session';
 import { getLogBuffer } from './logger';
 import { CAMPUSES } from '../core/constants';
 import { parseRelativeTime } from '../core/timeparse';
 import type { Campus } from '../core/database';
 import { napcatManager, type NapCatStatus } from '../core/napcat-manager';
+import { getDataDir, migrateDataDir, hasCustomDataDir, defaultDataDir } from '../core/data-location';
 
 interface IpcContext {
   getBot: () => Bot;
@@ -43,12 +44,48 @@ export const registerIpcHandlers = (ctx: IpcContext): void => {
       notificationCount: scheduler.getNotificationCount(),
       recordCount: recordCount.count,
       version: app.getVersion(),
-      dataDir: app.getPath('userData')
+      dataDir: getDataDir()
     };
   });
 
   ipcMain.handle('app:openDataDir', async () => {
-    await shell.openPath(app.getPath('userData'));
+    await shell.openPath(getDataDir());
+  });
+
+  ipcMain.handle('data:getLocation', () => {
+    return {
+      currentDir: getDataDir(),
+      defaultDir: defaultDataDir(),
+      custom: hasCustomDataDir()
+    };
+  });
+
+  ipcMain.handle('data:chooseAndMigrate', async () => {
+    const { canceled, filePaths } = await dialog.showOpenDialog({
+      title: '选择新的数据存储位置',
+      properties: ['openDirectory', 'createDirectory']
+    });
+    if (canceled || filePaths.length === 0) {
+      return { canceled: true };
+    }
+    const targetDir = filePaths[0];
+    if (targetDir === getDataDir()) {
+      return { canceled: false, changed: false, message: '已选择相同目录，无需迁移。' };
+    }
+    // Close the DB so its file isn't locked, then copy data to the new dir.
+    closeDatabase();
+    try {
+      const newDir = migrateDataDir(targetDir);
+      return { canceled: false, changed: true, newDir };
+    } catch (err) {
+      return { canceled: false, changed: false, message: `迁移失败：${err instanceof Error ? err.message : String(err)}` };
+    }
+  });
+
+  ipcMain.handle('app:relaunch', () => {
+    // Relaunch so the DB/config reload from the (possibly migrated) data dir.
+    app.relaunch();
+    app.exit(0);
   });
 
   ipcMain.handle('logs:get', () => getLogBuffer());

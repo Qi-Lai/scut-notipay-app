@@ -635,11 +635,57 @@ async function loadSettings() {
     document.getElementById('cfg-retry-count').value = config.billingRetryCount ?? 3;
     document.getElementById('cfg-proxy').value = config.proxy || '';
     document.getElementById('cfg-auto-start').checked = !!config.autoStart;
+
+    await loadDataLocation();
   } catch (error) {
     console.error(error);
   }
 }
 PAGE_REFRESHERS.settings = loadSettings;
+
+async function loadDataLocation() {
+  try {
+    const loc = await api.getDataLocation();
+    document.getElementById('data-dir-path').textContent = loc.currentDir;
+    const hint = document.getElementById('data-dir-hint');
+    if (loc.custom) {
+      hint.textContent = '当前为自定义位置。可更改到其它磁盘，更改时会自动迁移现有数据。';
+    } else {
+      hint.textContent = '默认位置在系统盘（AppData）。如需释放 C 盘空间或方便备份，可更改到其它磁盘。';
+    }
+  } catch (e) {
+    document.getElementById('data-dir-path').textContent = '读取失败';
+  }
+}
+
+document.getElementById('btn-open-data').addEventListener('click', () => api.openDataDir());
+
+document.getElementById('btn-migrate-data').addEventListener('click', async (e) => {
+  const btn = e.currentTarget;
+  btn.disabled = true;
+  btn.textContent = '迁移中…';
+  try {
+    const result = await api.chooseAndMigrateData();
+    if (result.canceled) {
+      btn.disabled = false;
+      btn.textContent = '更改存储位置…';
+      return;
+    }
+    if (result.changed) {
+      toast('数据已迁移，正在重启应用…', 'success');
+      setTimeout(() => api.relaunchApp(), 600);
+      return;
+    }
+    // Not changed (same dir or failure)
+    toast(result.message || '未发生更改', result.changed === false && result.message ? 'error' : 'info');
+    btn.disabled = false;
+    btn.textContent = '更改存储位置…';
+  } catch (err) {
+    toast(`迁移失败：${err.message}`, 'error');
+    btn.disabled = false;
+    btn.textContent = '更改存储位置…';
+  }
+});
 
 document.getElementById('btn-save-config').addEventListener('click', async () => {
   const commandNames = document

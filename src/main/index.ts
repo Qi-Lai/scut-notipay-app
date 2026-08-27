@@ -8,6 +8,7 @@ hookConsole();
 
 import { initConfig, getConfig, getConfigStore } from '../core/config';
 import { initDatabase, closeDatabase } from '../core/database';
+import { getDataDir } from '../core/data-location';
 import { Bot } from '../core/bot';
 import { renderChartPng } from './charts';
 import { registerIpcHandlers } from './ipc';
@@ -156,10 +157,10 @@ if (!gotLock) {
   });
 
   void app.whenReady().then(async () => {
-    const userData = app.getPath('userData');
-    initConfig(userData);
-    initDatabase(path.join(userData, 'data.db'));
-    console.log(`[App] Data directory: ${userData}`);
+    const dataDir = getDataDir();
+    initConfig(dataDir);
+    initDatabase(path.join(dataDir, 'data.db'));
+    console.log(`[App] Data directory: ${dataDir}`);
 
     registerIpcHandlers({
       getBot,

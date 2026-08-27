@@ -1,6 +1,6 @@
 {
   "name": "scut-notipay-app",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "华南理工大学宿舍缴费查询与提醒机器人（桌面管理端）",
   "main": "dist/main/index.js",
   "author": "scut-notipay-app",

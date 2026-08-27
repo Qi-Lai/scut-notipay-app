@@ -22,6 +22,11 @@ const api = {
   openDataDir: () => invoke('app:openDataDir'),
   getLogs: () => invoke('logs:get'),
 
+  // Data location
+  getDataLocation: () => invoke('data:getLocation'),
+  chooseAndMigrateData: () => invoke('data:chooseAndMigrate'),
+  relaunchApp: () => invoke('app:relaunch'),
+
   // Config
   getConfig: () => invoke('config:get'),
   updateConfig: (patch: Record<string, unknown>) => invoke('config:update', patch),
