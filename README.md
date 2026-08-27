@@ -5,6 +5,8 @@
 
 > 上游项目：[Naptie/scut-notipay](https://github.com/Naptie/scut-notipay)（MPL-2.0）
 
+> 📘 开发参考：[NapCat 技术参考文档](docs/napcat-guide.md)（面向后续所有 NapCat 项目的通用知识，如 OneBot11 配置、登录认证、启动方式、常见坑）
+
 ## 功能
 
 - **NapCat 一键管理**：（本仓库新增）自动检测本机 NapCat 安装、一键启动、自动开启正向 WebSocket 端口并同步 token。无需手动编辑 OneBot 配置。
