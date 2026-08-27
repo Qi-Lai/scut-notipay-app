@@ -7,3 +7,6 @@ smoke/
 .DS_Store
 *.png
 !build/icon.png
+integration-kit/node_modules/
+integration-kit/dist/
+.zcode/
