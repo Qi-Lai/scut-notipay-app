@@ -5,7 +5,9 @@
 
 > 上游项目：[Naptie/scut-notipay](https://github.com/Naptie/scut-notipay)（MPL-2.0）
 
-> 📘 开发参考：[NapCat 技术参考文档](docs/napcat-guide.md)（面向后续所有 NapCat 项目的通用知识，如 OneBot11 配置、登录认证、启动方式、常见坑）
+> 📘 开发参考：
+> - [NapCat 技术参考](docs/napcat-guide.md) —— NapCat 本体的通用知识（OneBot11 配置、登录、启动、常见坑），可迁移到任何 NapCat 项目。
+> - [校园网系统对接](docs/campus-system.md) —— 学校校园网/一卡通对接专项（SSO、`-sp` 版接口、充电查询），仅本校信息化项目相关。
 
 ## 功能
 

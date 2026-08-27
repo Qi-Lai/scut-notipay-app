@@ -1,6 +1,8 @@
 # NapCat 开发技术参考（OneBot11）
 
-> 本文档基于 scut-notipay-app 项目对 NapCat 的实测与排查整理，面向**后续所有需要对接 NapCat 的项目**。涵盖 NapCat 的架构、安装、OneBot11 配置、登录认证、启动方式与常见坑。所有结论均来自实际抓包 / 配置文件分析 / 实机验证，而非猜测。
+> 本文档是 **NapCat 本体**的通用技术参考，可迁移到任何对接 NapCat 的项目。所有结论来自本项目对 NapCat 的实测与排查验证。
+>
+> 学校校园网/一卡通对接的内容不在此文档，见 [校园网系统对接说明](campus-system.md)。
 
 ---
 
@@ -9,7 +11,7 @@
 - [1. NapCat 是什么](#1-napcat-是什么)
 - [2. 架构与目录结构](#2-架构与目录结构)
 - [3. OneBot11 配置详解](#3-onebot11-配置详解)
-- [4. 登录认证机制](#4-登录认证机制)
+- [4. 登录机制](#4-登录机制)
 - [5. 启动方式（Windows）](#5-启动方式windows)
 - [6. 常见坑与排查](#6-常见坑与排查)
 - [7. 一键管理实现思路（本项目案例）](#7-一键管理实现思路本项目案例)
@@ -18,14 +20,14 @@
 
 ## 1. NapCat 是什么
 
-NapCat 是一个 **QQ 机器人协议端**（OneBot 11 实现），它让你能用标准 OneBot 协议连接 QQ，收发消息、处理群/私聊事件。它基于 QQNT（QQ 新版客户端）的内部机制，通过**注入 QQ 进程的 hook** 来接管消息收发。
+NapCat 是一个 **QQ 机器人协议端**（OneBot 11 实现），让你用标准 OneBot 协议连接 QQ，收发消息、处理群/私聊事件。它基于 QQNT（QQ 新版客户端）的内部机制，通过**注入 QQ 进程的 hook** 来接管消息收发。
 
-- **定位**：介于「QQ 客户端」和你「机器人后端」之间的协议转换层。
+- **定位**：介于「QQ 客户端」和你的「机器人后端」之间的协议转换层。
 - **协议**：OneBot 11（`send_private_msg` / `send_group_msg` / 事件回调等）。
-- **连接方式**：正反向 WebSocket（`ws://`）、HTTP、WebSocket 客户端。本项目用**正向 WebSocket Server**。
+- **连接方式**：正反向 WebSocket（`ws://`）、HTTP、WebSocket 客户端。常用**正向 WebSocket Server**。
 - **上游**：[NapNeko/NapCatQQ](https://github.com/NapNeko/NapCatQQ)。
 
-> 通俗理解：NapCat 把「QQ 客户端」变成一个能收发消息、监听事件的**协议服务**，你的机器人代码只需连上它的 WebSocket 端口即可。
+> 通俗理解：NapCat 把「QQ 客户端」变成一个能收发消息、监听事件的**协议服务**，你的机器人代码只需连上它的 WebSocket 端口。
 
 ---
 
@@ -55,12 +57,12 @@ NapCat.Shell.Windows.OneKey/          # 一键包根目录
 └── bootmain/                        # 另一种更简化的启动器（可选）
 ```
 
-### 关键：为什么有「框架」和「自带 QQ」两套
+### 为什么有「框架」和「自带 QQ」两套
 
 - **`NapCat.Shell/`** = 框架（`napcat.mjs` + 注入 DLL），**不带 QQ**。
 - **`NapCat.44498.Shell/`** = NapCat 自带的**版本匹配的 QQ 实例**（有自己的 `QQ.exe` + `versions/`）。
 
-**NapCat 的注入 Hook 是针对特定 QQ 版本编译的**。如果要注入它自带的 QQ（`NapCat.44498.Shell\QQ.exe`），hook 与 QQ 版本匹配，能正常工作；**如果去注入系统里自行升级的新版 QQ，hook 版本不匹配会导致注入失败 → QQ 报「文件已损坏」**。这是本项目排查中最重要的结论之一。
+**NapCat 的注入 Hook 是针对特定 QQ 版本编译的**。注入它自带的 QQ（`NapCat.44498.Shell\QQ.exe`）时 hook 与 QQ 版本匹配、正常工作；**若注入系统里自行升级的新版 QQ，hook 版本不匹配会导致注入失败 → QQ 报「文件已损坏」**。
 
 ---
 
@@ -85,51 +87,32 @@ network.websocketServers[].{
 }
 ```
 
-> `enable` 默认是 `false` —— **NapCat 默认不开启任何端口**，必须手动在配置里写入并置 `true` 才会真正监听。这是「为什么点了一键启动却没端口」的根源之一。
+> `enable` 默认是 `false` —— **NapCat 默认不开启任何端口**，必须手动在配置里写入并置 `true` 才会真正监听。这是「为什么点了一键启动却无端口」的根源之一。
 
 ### 3.2 配置文件生成时机
 
-- 必须先用一个 QQ 账号**扫码登录成功**，NapCat 才会生成 `onebot11_<uin>.json`。
+- 必须先用一个 QQ 账号**扫码登录成功**，NapCat 才生成 `onebot11_<uin>.json`。
 - 登录前 `config/` 里只有 `napcat.json` 和 `webui.json`。
 
 ### 3.3 注入口诀：保守手术（conservative surgery）
 
-不假定 NapCat 的完整字段集合（版本会变）。**建议只翻转目标 WS 条的 `enable`/`host`/`port`/`token`，其余字段（包括未来新增的）原样保留**。找不到则新增一条。这样 NapCat 升级也不会写坏配置。
+不假定 NapCat 的完整字段集合（版本会变）。**建议只翻转目标 WS 条的 `enable`/`host`/`port`/`token`，其余字段（包括未来新增的）原样保留**；找不到则新增一条。这样 NapCat 升级也不会写坏配置。
 
 ---
 
-## 4. 登录认证机制
+## 4. 登录机制
 
-### 4.1 登录态 = 服务端 Session + JSESSIONID Cookie
+NapCat 自身登录走 **QQ 扫码登录**：
 
-NapCat 所在的校园/应用系统（如 dfyc）的登录态是**服务端 Session**，客户端靠 **`JSESSIONID` Cookie** 维持。**这不是客户端能决定的**，时长由服务端配置（常见 30 分钟不活跃即失效）。
+1. 启动后，若未登录，NapCat 会生成登录二维码（保存在 `cache/qrcode.png`）。
+2. 用手机 QQ 扫码并在手机上确认授权。
+3. 登录成功后生成 `onebot11_<uin>.json`（uin = 登录的 QQ 号），并开放配置的 WS 端口。
 
-- 接口调用靠浏览器/客户端**自动携带的 Cookie**，不需要前端管理 token。
-- 一旦 Session 过期，接口返回 401/302 跳登录。
+### 关键点
 
-### 4.2 认证链路（一卡通 / 校园 SSO）
-
-本项目接入的校园系统典型认证链路（`ecardwxnew` 主站 → `dfyc` 业务系统）：
-
-```
-1. 拿 access_token（OAuth bearer）
-2. 访问 ecardwxnew 的 /berserker-base/redirect?appId=360&...synjones-auth=<token>
-3. 302 → thirdLogin → authorize → getCode（.../service/ykt/getCode）
-4. 最终在 dfyc 建立 JSESSIONID 会话
-```
-
-> **关键区别**：一卡通主站的 `access_token` ≠ 业务系统的 `JSESSIONID`。业务系统要的是**走完这串 302 后建立的 JSESSIONID**。每次查询都可能需要重新走一遍（除非会话未过期）。
-
-### 4.3 无 -sp 版 vs 有 -sp 版（重要）
-
-同一个系统可能有两个入口路径（本项目实测确认是**两套不同后端**）：
-
-| 入口 | 登录跳转 | 结论 |
-|------|---------|------|
-| `sdms-weixin-pay`（无 `-sp`） | 302 → dfyc 内部 `weixin/thirdLogin` | **老版后端**，数据/电表下发慢、可能丢单 |
-| `sdms-weixin-pay-sp`（有 `-sp`） | 302 → 一卡通 OAuth SSO | **新版后端**，走统一 SSO，快且稳 |
-
-**对接时应优先用 `-sp` 版**；老版会导致「到账慢 / 信息更新慢 / 没到账」。
+- **扫码登录必须人工完成**（用手机 QQ），程序无法代替。
+- **登录成功后，跑着的那次启动不会自动热加载新配置**；要让新配置（如开启的 WS 端口）生效，需要**完全重启 NapCat**。
+- 二维码在 `cache/qrcode.png`，比控制台里的块字符二维码可靠（控制台 cmd 代码页 GBK 下会乱码导致扫不了）。
 
 ---
 
@@ -180,7 +163,7 @@ echo (async () => { await import("file:///%NAPCAT_MAIN_PATH%") })() > loadNapCat
 | 控制台二维码乱码扫不了 | cmd 代码页（GBK）渲染 UTF-8 块字符 | 用 `cache/qrcode.png` 图片扫码 |
 | 终端中文乱码 | bat 里含中文 + 编码不一致 | bat 保持纯 ASCII，提示交给应用层 |
 | cmd 反复弹开关 | 启动脚本用临时路径且被删除，提权重启时找不到 | 脚本放固定路径、不删除 |
-| 登录态失效 | 服务端 Session 过期 | 重走登录链路重新建 JSESSIONID |
+| 登录态失效（NapCat 自身） | QQ 登录态过期 | 重新扫码登录 |
 
 ---
 
@@ -207,4 +190,3 @@ echo (async () => { await import("file:///%NAPCAT_MAIN_PATH%") })() > loadNapCat
 ---
 
 > 上游源码：https://github.com/NapNeko/NapCatQQ
-> 本项目案例：https://github.com/Qi-Lai/scut-notipay-app
