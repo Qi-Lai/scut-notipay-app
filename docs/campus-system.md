@@ -13,10 +13,11 @@
 - [1. 校园网整体架构](#1-校园网整体架构)
 - [2. 统一身份认证（CAS / SSO）](#2-统一身份认证cas--sso)
 - [3. 门户 my.scut.edu.cn](#3-门户-myscuteducn)
-- [4. 宿舍水电费系统（dfyc）](#4-宿舍水电费系统dfyc)
-- [5. 登录态与-JSESSIONID](#5-登录态与-jsessionid)
-- [6. 两套后端入口：`-sp` vs 无 `-sp`](#6-两套后端入口-sp-vs-无-sp)
-- [7. 对接注意事项](#7-对接注意事项)
+- [4. 教务系统（jwglxt / 正方）](#4-教务系统jwglxt--正方)
+- [5. 宿舍水电费系统（dfyc）](#5-宿舍水电费系统dfyc)
+- [6. 登录态与-JSESSIONID](#6-登录态与-jsessionid)
+- [7. 两套后端入口：`-sp` vs 无 `-sp`](#7-两套后端入口-sp-vs-无-sp)
+- [8. 对接注意事项](#8-对接注意事项)
 
 ---
 
@@ -88,9 +89,55 @@
 
 ---
 
-## 4. 宿舍水电费系统（dfyc）
+## 4. 教务系统（jwglxt / 正方）
 
-宿舍水电费是校园网的一个业务子系统，有两套后端入口（见第 6 节）：
+教务是校园网最重要的功能系统之一，采用**正方教务系统（ZFSoft / 教学管理信息服务平台）**框架（`jwglxt` 前缀、`zftal-ui` 静态资源、`login_slogin.html` 等特征可确认）。
+
+### 4.1 入口与认证
+
+- **入口域名**：`https://jw2018.jw.scut.edu.cn`
+- **CAS service**：`http://jw2018.jw.scut.edu.cn/sso/driotlogin`
+  - 访问 `jw2018.jw.scut.edu.cn` → JS 跳到 `sso.scut.edu.cn/cas/login?service=<上值>`
+  - 拿到 `ticket` 后访问 `?ticket=ST-xxx` → 服务端校验 → 进入教务
+
+### 4.2 SSO 流转到教务（关键链路，实测确认）
+
+登录一次拿到 `CASTGC` 后，访问教务 service 会自动发 ticket，最终在教务系统落地：
+
+```
+GET https://sso.scut.edu.cn/cas/login?service=<教务service>   （带 CASTGC）
+  → 302 + ticket=ST-xxx
+GET http://jw2018.jw.scut.edu.cn/sso/driotlogin?ticket=ST-xxx
+  → 302
+GET /jwglxt/ticketlogin?uid=<学号>&timestamp=<秒级时间戳>&verify=<签名>
+  → 进入教务后台（发放教务 JSESSIONID）
+```
+
+- **`ticketlogin`** 是教务教务系统的登录凭证接口：`uid`（学号）+ `timestamp`（秒级）+ `verify`（服务端签名，HMAC/MD5）。`verify` 由服务端依据 uid+timestamp+密钥计算，客户端无法伪造。
+- 进入后教务系统在 `jw2018.jw.scut.edu.cn` 域种下 **`JSESSIONID`**（HttpOnly）+ `clwz_blc_pst_JWC_xxx`（persistence，负载均衡粘滞）。
+
+### 4.3 核心数据接口（实测确认，均在 `jw2018.jw.scut.edu.cn/jwglxt` 下）
+
+| 接口 | 方法 | 说明 |
+|------|------|------|
+| `/jwglxt/xtgl/index_initMenu.html?jsdm=xs` | GET | 登录后学生首页菜单/数据（`jsdm=xs` 学生代码） |
+| `/jwglxt/kbcx/xskbcx_cxXsKb.html?xnm=<学年>&xqm=<学期>` | GET | **课表查询**（`xnm` 学年如 2025，`xqm` 学期如 3），返回课程/班级/教师 JSON |
+| `/jwglxt/cjcx/cjcx_cxXsKcjg.html?xnm=<学年>&xqm=<学期>` | GET | **成绩查询**，返回分页 JSON（`queryModel`/`totalResult`/成绩记录） |
+
+> 请求示例（在已登录会话内）：`/jwglxt/kbcx/xskbcx_cxXsKb.html?xnm=2025&xqm=3` → 返回含 `XH`/`XM`/`BJMC`/`XNMC`/`KCMS` 等字段的学生课表 JSON。
+> `xnm` = 学年（如 2025 表示 2025-2026 学年），`xqm` = 学期（1/2/3 对应秋/春/夏等，实际以返回为准）。每次请求需带教务 `JSESSIONID` cookie。
+
+### 4.4 对接要点
+
+- 课表/成绩接口需 **`X-Requested-With: XMLHttpRequest`** 头，并带教务 `JSESSIONID` cookie。
+- `xnm`/`xqm` 需先获取当前学年学期（可从 `index_initMenu` 返回或课表返回的 `XNMC`/`XQM` 推断）。
+- 教务会话（JSESSIONID）是服务端 Session，**短期有效**，需做「过期自动重新走 SSO」兜底。
+
+---
+
+## 5. 宿舍水电费系统（dfyc）
+
+宿舍水电费是校园网的一个业务子系统，有两套后端入口（见第 7 节）：
 
 | 域名 | 作用 |
 |------|------|
@@ -108,7 +155,7 @@
 
 ---
 
-## 5. 登录态与 JSESSIONID
+## 6. 登录态与 JSESSIONID
 
 业务系统（如 dfyc）的登录态是**服务端 Session**，客户端靠 **`JSESSIONID` Cookie** 维持。
 
@@ -119,7 +166,7 @@
 
 ---
 
-## 6. 两套后端入口：`-sp` vs 无 `-sp`
+## 7. 两套后端入口：`-sp` vs 无 `-sp`
 
 同一个水电费业务系统有两个入口，**实测确认是两套不同后端**：
 
@@ -134,7 +181,7 @@
 
 ---
 
-## 7. 对接注意事项
+## 8. 对接注意事项
 
 1. **先掌握统一认证（CAS）**：不管接哪个业务，多半要先过 `sso.scut.edu.cn` 的 CAS 登录。`lt` / `execution` 动态生成、页面有滑块验证码，是主要门槛。
 2. **认准 `-sp` 版**：查询、充值都用 `-sp` 路径，避免老版后端的数据下发慢/丢单。
