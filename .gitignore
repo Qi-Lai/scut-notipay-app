@@ -9,4 +9,5 @@ smoke/
 !build/icon.png
 integration-kit/node_modules/
 integration-kit/dist/
+course-grabber/node_modules/
 .zcode/
