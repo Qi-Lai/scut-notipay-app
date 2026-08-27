@@ -1,0 +1,9 @@
+node_modules/
+dist/
+release*/
+upstream/
+smoke/
+*.log
+.DS_Store
+*.png
+!build/icon.png

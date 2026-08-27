@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:" />
+  <title>SCUT NotiPay 管理面板</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="brand-icon">⚡</span>
+        <div>
+          <div class="brand-name">SCUT NotiPay</div>
+          <div class="brand-sub">宿舍缴费提醒机器人</div>
+        </div>
+      </div>
+      <nav class="nav">
+        <button class="nav-item active" data-page="dashboard"><span class="nav-icon">📊</span>仪表盘</button>
+        <button class="nav-item" data-page="students"><span class="nav-icon">👥</span>用户管理</button>
+        <button class="nav-item" data-page="notifications"><span class="nav-icon">🔔</span>通知计划</button>
+        <button class="nav-item" data-page="logs"><span class="nav-icon">📜</span>运行日志</button>
+        <button class="nav-item" data-page="settings"><span class="nav-icon">⚙️</span>设置</button>
+      </nav>
+      <div class="sidebar-footer">
+        <div class="bot-status" id="sidebar-bot-status">
+          <span class="status-dot stopped" id="sidebar-status-dot"></span>
+          <span id="sidebar-status-text">已停止</span>
+        </div>
+        <div class="version" id="sidebar-version"></div>
+        <button class="theme-toggle" id="btn-theme-toggle" title="切换浅色/深色主题">
+          <span id="theme-toggle-icon">☀️</span>
+          <span id="theme-toggle-text">浅色模式</span>
+        </button>
+      </div>
+    </aside>
+
+    <main class="content">
+      <!-- ==================== Dashboard ==================== -->
+      <section class="page active" id="page-dashboard">
+        <h1 class="page-title">仪表盘</h1>
+
+        <div class="card status-card napcat-card" id="napcat-card">
+          <div class="status-left">
+            <span class="status-dot large stopped" id="napcat-status-dot"></span>
+            <div>
+              <div class="status-title" id="napcat-status-text">检测 NapCat…</div>
+              <div class="status-sub" id="napcat-status-detail"></div>
+            </div>
+          </div>
+          <div class="status-actions" id="napcat-actions">
+            <button class="btn primary" id="btn-napcat-start">一键启动 NapCat</button>
+            <button class="btn" id="btn-napcat-stop">停止</button>
+            <button class="btn" id="btn-napcat-rescan">刷新检测</button>
+          </div>
+        </div>
+
+        <div class="card status-card">
+          <div class="status-left">
+            <span class="status-dot large stopped" id="dash-status-dot"></span>
+            <div>
+              <div class="status-title" id="dash-status-text">机器人已停止</div>
+              <div class="status-sub" id="dash-napcat-addr"></div>
+            </div>
+          </div>
+          <div class="status-actions">
+            <button class="btn primary" id="btn-bot-start">启动</button>
+            <button class="btn" id="btn-bot-stop">停止</button>
+            <button class="btn" id="btn-bot-restart">重启</button>
+            <button class="btn accent" id="btn-run-now" title="立即执行一次数据采集与通知推送">立即执行整点任务</button>
+          </div>
+        </div>
+
+        <div class="stat-grid">
+          <div class="card stat-card">
+            <div class="stat-value" id="stat-students">0</div>
+            <div class="stat-label">绑定用户</div>
+          </div>
+          <div class="card stat-card">
+            <div class="stat-value" id="stat-notifications">0</div>
+            <div class="stat-label">通知计划</div>
+          </div>
+          <div class="card stat-card">
+            <div class="stat-value" id="stat-records">0</div>
+            <div class="stat-label">账单记录</div>
+          </div>
+          <div class="card stat-card">
+            <div class="stat-value small" id="stat-next-run">—</div>
+            <div class="stat-label">下次整点任务</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h2>使用说明</h2>
+          </div>
+          <div class="help-body">
+            <p>本应用是 <code>scut-notipay</code>（github.com/Naptie/scut-notipay）的桌面管理端，机器人本体在本应用内运行，需要配合 <b>NapCat</b>（QQ 协议端）使用：</p>
+            <ol>
+              <li>在「设置」页填写 NapCat 的 WebSocket 地址与访问令牌，并启动机器人；</li>
+              <li>在「用户管理」页绑定学生账号（或在 QQ 私聊机器人发送 <code>snp bind &lt;卡号&gt; &lt;密码&gt; &lt;校区&gt;</code>）；</li>
+              <li>机器人每小时整点自动采集账单，并按通知计划推送余额报告到 QQ。</li>
+            </ol>
+            <p class="muted">数据目录：<code id="dash-data-dir"></code> <button class="btn small" id="btn-open-data-dir">打开</button></p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ==================== Students ==================== -->
+      <section class="page" id="page-students">
+        <div class="page-header">
+          <h1 class="page-title">用户管理</h1>
+          <button class="btn primary" id="btn-add-student">＋ 绑定用户</button>
+        </div>
+        <div class="card">
+          <table class="table" id="students-table">
+            <thead>
+              <tr>
+                <th>QQ</th><th>姓名</th><th>学号</th><th>校区</th><th>宿舍</th>
+                <th>电费</th><th>水费</th><th>空调费</th><th>更新间隔</th><th>上次采集</th><th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="students-tbody">
+              <tr><td colspan="11" class="empty">暂无绑定用户</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ==================== Notifications ==================== -->
+      <section class="page" id="page-notifications">
+        <div class="page-header">
+          <h1 class="page-title">通知计划</h1>
+          <button class="btn primary" id="btn-add-notification">＋ 添加通知</button>
+        </div>
+        <div class="card">
+          <table class="table" id="notifications-table">
+            <thead>
+              <tr>
+                <th>用户 QQ</th><th>姓名</th><th>推送目标</th><th>时间</th><th>余额阈值</th><th>项目</th><th>更新时间</th><th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="notifications-tbody">
+              <tr><td colspan="8" class="empty">暂无通知计划</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ==================== Logs ==================== -->
+      <section class="page" id="page-logs">
+        <div class="page-header">
+          <h1 class="page-title">运行日志</h1>
+          <div class="log-controls">
+            <select id="log-level-filter" class="input small-select">
+              <option value="all">全部级别</option>
+              <option value="log">log</option>
+              <option value="info">info</option>
+              <option value="warn">warn</option>
+              <option value="error">error</option>
+              <option value="debug">debug</option>
+            </select>
+            <button class="btn" id="btn-log-pause">暂停滚动</button>
+            <button class="btn" id="btn-log-clear">清空显示</button>
+          </div>
+        </div>
+        <div class="card log-card">
+          <div class="log-view" id="log-view"></div>
+        </div>
+      </section>
+
+      <!-- ==================== Settings ==================== -->
+      <section class="page" id="page-settings">
+        <h1 class="page-title">设置</h1>
+        <div class="card settings-card">
+          <div class="form-grid">
+            <label class="form-field">
+              <span class="form-label">NapCat 安装目录（留空自动检测）</span>
+              <input class="input" id="cfg-napcat-dir" placeholder="如 D:\NapCat.Shell.Windows.OneKey" />
+            </label>
+            <label class="form-field">
+              <span class="form-label">NapCat WebSocket 地址</span>
+              <input class="input" id="cfg-napcat-ws" placeholder="ws://127.0.0.1:3001" />
+            </label>
+            <label class="form-field">
+              <span class="form-label">NapCat 访问令牌</span>
+              <input class="input" id="cfg-napcat-token" type="password" placeholder="留空表示未设置" />
+            </label>
+            <label class="form-field">
+              <span class="form-label">触发命令名（逗号分隔）</span>
+              <input class="input" id="cfg-command-names" placeholder="scut-notipay,snp" />
+            </label>
+            <label class="form-field">
+              <span class="form-label">账单查询重试次数</span>
+              <input class="input" id="cfg-retry-count" type="number" min="0" max="10" />
+            </label>
+            <label class="form-field">
+              <span class="form-label">网络代理（可选，http:// 或 socks5://）</span>
+              <input class="input" id="cfg-proxy" placeholder="socks5://127.0.0.1:1080" />
+            </label>
+            <label class="form-field checkbox-field">
+              <input type="checkbox" id="cfg-auto-start" />
+              <span>应用启动时自动连接 NapCat</span>
+            </label>
+          </div>
+          <div class="settings-actions">
+            <button class="btn primary" id="btn-save-config">保存设置</button>
+            <span class="muted">修改 WebSocket 地址或令牌后，运行中的机器人会自动重启。</span>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><h2>数据安全</h2></div>
+          <div class="help-body">
+            <p>学生卡片密码使用 <b>AES-256-GCM</b> 加密后存储在本地 SQLite 数据库中，加密密钥保存在数据目录的 <code>config.json</code> 内（首次启动自动生成）。</p>
+            <p class="muted">请勿将数据目录（含 <code>config.json</code> 与 <code>data.db</code>）发送给他人。</p>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- ==================== Modal: bind student ==================== -->
+  <div class="modal-mask hidden" id="modal-bind">
+    <div class="modal">
+      <div class="modal-title">绑定用户</div>
+      <div class="form-grid single">
+        <label class="form-field"><span class="form-label">QQ 号</span><input class="input" id="bind-qq" placeholder="用户的 QQ 号" /></label>
+        <label class="form-field"><span class="form-label">校园卡号</span><input class="input" id="bind-card" placeholder="一卡通卡号" /></label>
+        <label class="form-field"><span class="form-label">卡片密码</span><input class="input" id="bind-password" type="password" placeholder="一卡通查询密码" /></label>
+        <label class="form-field"><span class="form-label">校区</span>
+          <select class="input" id="bind-campus">
+            <option value="GZIC">GZIC（广州国际校区）</option>
+            <option value="DXC">DXC（大学城校区）</option>
+          </select>
+        </label>
+        <label class="form-field"><span class="form-label">自动更新间隔</span><input class="input" id="bind-interval" value="1d" placeholder="1d / 12h / 2w" /></label>
+      </div>
+      <div class="modal-actions">
+        <button class="btn" data-close>取消</button>
+        <button class="btn primary" id="btn-bind-confirm">验证并绑定</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== Modal: add notification ==================== -->
+  <div class="modal-mask hidden" id="modal-notification">
+    <div class="modal">
+      <div class="modal-title">添加通知计划</div>
+      <div class="form-grid single">
+        <label class="form-field"><span class="form-label">用户</span><select class="input" id="notify-qq"></select></label>
+        <label class="form-field"><span class="form-label">推送目标</span>
+          <select class="input" id="notify-chat-type">
+            <option value="private">私聊</option>
+            <option value="group">群聊</option>
+          </select>
+        </label>
+        <label class="form-field"><span class="form-label">目标 ID（QQ 号或群号）</span><input class="input" id="notify-chat-id" /></label>
+        <label class="form-field"><span class="form-label">推送时间（时，0-23）</span><input class="input" id="notify-hour" type="number" min="0" max="23" value="20" /></label>
+        <label class="form-field"><span class="form-label">余额阈值（元，留空表示总是推送）</span><input class="input" id="notify-threshold" type="number" min="0" step="0.01" placeholder="例如 10" /></label>
+        <div class="form-field">
+          <span class="form-label">通知项目</span>
+          <div class="checkbox-row">
+            <label><input type="checkbox" id="notify-line-e" checked /> 电费</label>
+            <label><input type="checkbox" id="notify-line-w" checked /> 水费</label>
+            <label><input type="checkbox" id="notify-line-a" checked /> 空调费</label>
+          </div>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn" data-close>取消</button>
+        <button class="btn primary" id="btn-notify-confirm">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== Modal: history chart ==================== -->
+  <div class="modal-mask hidden" id="modal-history">
+    <div class="modal wide">
+      <div class="modal-title" id="history-title">账单历史</div>
+      <div class="history-toolbar">
+        <select class="input small-select" id="history-days">
+          <option value="7">最近 7 天</option>
+          <option value="14">最近 14 天</option>
+          <option value="30" selected>最近 30 天</option>
+          <option value="90">最近 90 天</option>
+        </select>
+      </div>
+      <div class="history-chart-wrap"><canvas id="history-chart"></canvas></div>
+      <div class="modal-actions">
+        <button class="btn" data-close>关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== Modal: query result ==================== -->
+  <div class="modal-mask hidden" id="modal-query">
+    <div class="modal">
+      <div class="modal-title">实时账单</div>
+      <div id="query-result-body" class="query-result"></div>
+      <div class="modal-actions">
+        <button class="btn" data-close>关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== Modal: set interval ==================== -->
+  <div class="modal-mask hidden" id="modal-interval">
+    <div class="modal">
+      <div class="modal-title">设置自动更新间隔</div>
+      <div class="form-grid single">
+        <label class="form-field">
+          <span class="form-label" id="interval-hint">当前：1d</span>
+          <input class="input" id="interval-input" placeholder="如 12h / 1d / 2w，最小 1 小时" />
+        </label>
+        <p class="muted interval-help" style="font-size:12px">支持格式：h（小时）、d（天）、w（周）。例：<code>12h</code>、<code>1d</code>、<code>2w</code>。</p>
+      </div>
+      <div class="modal-actions">
+        <button class="btn" data-close>取消</button>
+        <button class="btn primary" id="btn-interval-confirm">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== Modal: generic confirm (replaces Electron-disabled confirm) ==================== -->
+  <div class="modal-mask hidden" id="modal-confirm">
+    <div class="modal">
+      <div class="modal-title">确认操作</div>
+      <div id="confirm-body" class="query-result"></div>
+      <div class="modal-actions">
+        <button class="btn" data-close>取消</button>
+        <button class="btn danger" id="btn-confirm-yes">确认</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast-container" id="toast-container"></div>
+
+  <script src="vendor/chart.umd.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:" />
+  <title>chart-renderer</title>
+  <style>
+    @font-face {
+      font-family: 'Sora';
+      src: url('../fonts/sora-latin-400-normal.ttf') format('truetype');
+      font-weight: 400;
+    }
+    @font-face {
+      font-family: 'Sora';
+      src: url('../fonts/sora-latin-700-normal.ttf') format('truetype');
+      font-weight: 700;
+    }
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: #ffffff;
+    }
+    #container {
+      position: relative;
+      background: #ffffff;
+    }
+  </style>
+</head>
+<body>
+  <div id="container"><canvas id="chart"></canvas></div>
+  <script src="vendor/chart.umd.js"></script>
+  <script>
+    // Fill the canvas with white before drawing (transparent by default)
+    Chart.register({
+      id: 'customCanvasBackgroundColor',
+      beforeDraw: (chart) => {
+        const { ctx } = chart;
+        ctx.save();
+        ctx.globalCompositeOperation = 'destination-over';
+        ctx.fillStyle = 'white';
+        ctx.fillRect(0, 0, chart.width, chart.height);
+        ctx.restore();
+      }
+    });
+
+    let currentChart = null;
+
+    /**
+     * Render a chart and return its PNG as a data URL.
+     * Called from the main process via webContents.executeJavaScript.
+     */
+    window.__renderChart = async (config, cssWidth, cssHeight) => {
+      await document.fonts.ready;
+
+      if (currentChart) {
+        currentChart.destroy();
+        currentChart = null;
+      }
+
+      const canvas = document.getElementById('chart');
+      const container = document.getElementById('container');
+      container.style.width = cssWidth + 'px';
+      container.style.height = cssHeight + 'px';
+      canvas.style.width = cssWidth + 'px';
+      canvas.style.height = cssHeight + 'px';
+
+      config.options = config.options || {};
+      config.options.responsive = false;
+      config.options.animation = false;
+      config.options.maintainAspectRatio = false;
+
+      currentChart = new Chart(canvas.getContext('2d'), config);
+      currentChart.update();
+
+      return canvas.toDataURL('image/png');
+    };
+
+    window.__chartReady = true;
+  </script>
+</body>
+</html>

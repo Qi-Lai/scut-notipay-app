@@ -1,0 +1,36 @@
+# electron-builder configuration.
+# Packaged main entry is dist/main/index.js; native module better-sqlite3
+# is rebuilt against Electron's ABI and bundled unpacked from asar.
+appId: com.scut.notipay.app
+productName: SCUT NotiPay
+asar: true
+asarUnpack:
+  - '**/node_modules/better-sqlite3/**'
+directories:
+  output: release
+  buildResources: build
+files:
+  - 'dist/**/*'
+  - 'fonts/**/*'
+  - 'build/icon.png'
+  - 'package.json'
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+    - target: portable
+      arch:
+        - x64
+  icon: build/icon.png
+  artifactName: '${productName}-Setup-${version}.${ext}'
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: SCUT NotiPay
+  uninstallDisplayName: SCUT NotiPay
+portable:
+  artifactName: '${productName}-Portable-${version}.${ext}'

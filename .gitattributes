@@ -1,0 +1,35 @@
+# Normalize line endings across platforms.
+# This ensures the repository always stores LF endings and checks them out as
+# the native line ending for the current OS (CRLF on Windows, LF on Unix/macOS).
+
+# Text files: convert to LF in the repo, check out as native.
+* text=auto
+
+# Explicitly treat these as text and normalize.
+*.js     text
+*.ts     text
+*.json   text
+*.css    text
+*.html   text
+*.md     text
+*.yml    text
+*.yaml   text
+*.txt    text
+*.bat    text eol=crlf
+*.ps1    text eol=crlf
+
+# Binary/non-text files: never touch, never normalize.
+*.png    binary
+*.jpg    binary
+*.jpeg   binary
+*.gif    binary
+*.ico    binary
+*.ttf    binary
+*.woff   binary
+*.woff2  binary
+*.exe    binary
+*.dll    binary
+*.node   binary
+
+# Mark scripts as executable in the repo (best-effort on Windows).
+*.sh     text eol=lf
