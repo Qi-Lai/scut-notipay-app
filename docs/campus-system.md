@@ -129,13 +129,57 @@
 | `ticket` | 认证通过后的 CAS 票据（`ST-xxx`），业务系统用它换用户信息 |
 | `lt` / `execution` | 每次 GET 登录页动态生成，POST 必须回传 |
 
+### 3.5 图形验证码机制（一卡通 OAuth）
+
+除了 CAS 的验证码，**一卡通 OAuth 登录**（`-sp` 版水电费用）也有自己的图形验证码：
+
+- **获取接口**：`GET https://ecardwxnew.scut.edu.cn/berserker-auth/oauth/captcha?synAccessSource=h5`
+  - 返回 `{ key, image }`：`key` 是验证码的服务端标识（提交登录时需带回），`image` 是 base64 图片。
+- **识别方案（上游预留但未启用）**：用 Tesseract OCR 识别 `image` 里的文字，得到 `solution`，然后 `{ key, solution }` 提交。
+- **机器人是否真的需要**：**不需要**。机器人用的 OAuth token 端点（`/berserker-auth/oauth/token`，`logintype=card`）**只传 username+password，不带验证码**——验证码只出现在「网页端 authorize 流程」，机器人走 token 端点绕过了它。
+
+> 结论：**图形验证码是网页端手动登录的防线；机器人用 OAuth 端点（查询密码）纯自动登录，不需要 OCR 验证码。** 上游 `captcha.ts` 里的 `solveCaptcha`（Tesseract OCR）是预留的备选方案，当前未启用。
+
 ---
 
 ## 4. 门户 my.scut.edu.cn
 
+### 4.1 前端是「SPA + 动态接口」，不是纯静态页
+
 - **入口**：`https://my.scut.edu.cn` → 301 到 `/up` → 302 到 `/up/`
 - **登录保护**：未登录访问会 302 到 `sso.scut.edu.cn/cas/login?service=<up/...>`
-- **定位**：校内统一门户，聚合多种服务。登录后可按需探索其 API（成绩、课表、消息等）。
+- **定位**：校内统一门户，聚合多种服务。
+
+### 4.2 SPA + 动态接口机制（实测确认）
+
+表面看门户返回的是静态 HTML（`/up/view` 返回 HTML 片段），但它**能实时更新内容且能识别身份**，靠的是一套「SPA 前端 + 动态接口 + 会话 Cookie」机制：
+
+```
+1. 浏览器加载 /up/view → 得到 SPA 壳（HTML + JS 框架）
+2. 前端 JS 初始化时，向动态接口发 Ajax/Fetch 请求（带 HttpOnly Cookie）
+3. 服务端凭 Cookie 里的 JSESSIONID 识别当前用户身份
+4. 查询到该用户的实时数据，返回 JSON 或 HTML 片段
+5. 前端把返回的内容渲染到对应区块 → 页面更新
+```
+
+**关键证据（实测）**：
+- 门户首页是**分块动态加载**：`GET /up/portal/viewhome?action=loadPage&item_id=000_00_01` 返回「信息中心」区块的 HTML；不同 `item_id` 对应不同区块（信息中心 / 应用中心 / 消息提醒）。
+- 教务系统同理：`GET /jwglxt/kbcx/xskbcx_cxXsKb.html?xnm=2025&xqm=3` 返回课表 JSON；`/jwglxt/cjcx/cjcx_cxXsKcjg.html` 返回成绩 JSON。
+- 这些接口都靠 **`JSESSIONID` Cookie（HttpOnly）+ `X-Requested-With: XMLHttpRequest`** 识别身份并返回该用户的数据。
+
+### 4.3 为什么「静态页能更新」+「认识你是谁」
+
+| 你的疑问 | 机制解释 |
+|---------|---------|
+| **静态页怎么更新？** | 静态 HTML 只是**壳**（框架/布局），真正内容是 JS 发 Ajax 动态拉接口返回的。刷新切换区块 = 重新请求接口。数据在服务端，所以永远是最新的。 |
+| **怎么识别身份？** | 登录后服务端在浏览器种下 `JSESSIONID`（HttpOnly，JS 读不到，只有浏览器自动带）。每次请求浏览器自动带上它，服务端据此认出是哪个用户，返回**该用户私有**的数据。 |
+
+> **为什么 HttpOnly 重要**：`JSESSIONID` 是 HttpOnly 的，前端 JS 读不到（`document.cookie` 能看到的只是非 HttpOnly 的如 `clwz_blc_pst_*`），所以**就算页面被注入 XSS 也偷不到会话**——只能靠浏览器自动携带。这就是「身份识别」与「安全」的结合点。
+
+### 4.4 对对接的意义
+
+- **对接门户/教务 = 调这些动态接口**，不是解析静态页。拿到登录会话（JSESSIONID）后，构造 `X-Requested-With` + Cookie 请求接口即可拿数据。
+- **动态接口路径规律**：多在 `/up/...`、`/jwglxt/...` 下，配合 `?action=...`、`?item_id=...`、`?xnm=&xqm=` 等参数。
 
 ---
 
