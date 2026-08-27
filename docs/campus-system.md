@@ -198,10 +198,12 @@ GET /jwglxt/ticketlogin?uid=<学号>&timestamp=<秒级时间戳>&verify=<签名>
 
 | 接口 | 方法 | 说明 |
 |------|------|------|
-| `/sdms-weixin-pay/service/find/userinfo` | GET | 用户信息（realName / roomName / 楼栋） |
-| `/sdms-weixin-pay/service/ammeterBalance?type=1` | GET | 电表余额（leftEle / leftMoney / elePrice） |
-| `/sdms-weixin-pay/service/waterBalance?type=3&systemType=1` | GET | 水费余额 |
-| `/sdms-weixin-pay/service/zhixiaopay/save` | POST | 生成充值单（body `{payType,payMoney,payQuantity}`，返回微信支付 URL） |
+| `/sdms-weixin-pay-sp/service/find/userinfo` | GET | 用户信息（realName / roomName / 楼栋） |
+| `/sdms-weixin-pay-sp/service/ammeterBalance?type=1` | GET | 电表余额（leftEle / leftMoney / elePrice） |
+| `/sdms-weixin-pay-sp/service/waterBalance?type=3&systemType=1` | GET | 水费余额 |
+| `/sdms-weixin-pay-sp/service/zhixiaopay/save` | POST | 生成充值单（body `{payType,payMoney,payQuantity}`，返回微信支付 URL） |
+
+> 注：以上为 `-sp` 版接口（机器人当前使用的口径，可自动登录）。两个版本（`-sp` / 无 `-sp`）的**登录方式和充值记录相互独立**，详见第 8 节。
 
 ---
 
@@ -218,18 +220,35 @@ GET /jwglxt/ticketlogin?uid=<学号>&timestamp=<秒级时间戳>&verify=<签名>
 
 ## 8. 两套后端入口：`-sp` vs 无 `-sp`
 
-同一个水电费业务系统有两个入口，**实测确认是两套不同后端**：
+同一个宿舍水电费系统有两个入口，**实测确认是两套不同的后端**。**两者的登录方式不同，且业务数据（尤其是充值记录）也不互通。**
 
-| 入口 | 登录跳转 | 结论 |
-|------|---------|------|
-| `sdms-weixin-pay-sp`（有 `-sp`） | 302 → 一卡通/SSO | **信息落后版**，数据下发/更新慢，可能丢单，**应弃用** |
-| `sdms-weixin-pay`（无 `-sp`） | 302 → dfyc 内部 `weixin/thirdLogin` | **应使用版**，数据及时、新、到账快 |
+### 8.1 登录方式对比（实测轨迹确认）
 
-> ⚠️ **更正**：此前文档误将 `-sp` 版当作新版/优先版。实际以使用验证为准 —— **带 `-sp` 的版本信息落后（数据更新慢、可能丢单），应弃用；应使用无 `-sp` 版接口。**
+| | `-sp` 版 | 无 `-sp` 版 |
+|---|---|---|
+| 入口 | `/sdms-weixin-pay-sp/...` | `/sdms-weixin-pay/...` |
+| **登录方式** | **一卡通 OAuth** | **统一 CAS** |
+| 登录跳转 | `ecardwxnew`/`berserker-auth/oauth/authorize` → `frontInit` → `oauth/captcha` | `weixin/thirdLogin` → `sso.scut.edu.cn/cas/login?service=thirdLogin` |
+| 认证需要 | 学号 + 查询密码 + 图形验证码（一卡通） | 学号 + 密码 + 90秒验证码 / 扫码（统一认证） |
+| 会话凭证 | `access_token` / `TGC` / `locSession` | `CASTGC` → `ticket=ST-xxx` |
+| 机器人能否自动登录 | ✅（`obtainToken` 用查询密码，可自动；captcha 在 OAuth 端点可过） | ⚠️ 需验证码/扫码，纯自动化较难 |
 
-**对接时应使用无 `-sp` 版接口**（`/sdms-weixin-pay/service/...`）。
+> - **`-sp` 版**：一卡通 OAuth（`berserker` 体系 + 图形验证码），机器人代码 `billing.ts` 的 `getBillsDXC` 走的就是这套（可自动登录）。
+> - **无 `-sp` 版**：统一 CAS（`sso.scut.edu.cn`），登录流程和 -sp 版**不兼容**——所以不能只把接口路径从 -sp 换成无 -sp，登录链路也必须整套切换。
 
-> 判断方法：不带会话去请求 `/service/find/userinfo`，看它 302 到哪 —— 无 `-sp` 版跳 dfyc 内部 `thirdLogin`，`-sp` 版跳统一认证/SSO。
+### 8.2 业务数据差异（实测确认）
+
+- **电费余额查询**：两套接口**都能查到实时的电费余额**（`ammeterBalance` 返回「查询电表实时余额成功」）。
+- **充值记录**：**两套系统的充值记录互相独立、不互通**——在 `-sp` 版发起的充值，不会出现在无 `-sp` 版的记录里，反之亦然。
+- **结论**：「信息落后/到账慢」的正确理解是「**充值记录不互通**」，而非「电费余额数据滞后」。
+
+### 8.3 对接建议
+
+- **机器人查询电费余额**：用 **`-sp` 版**即可（能自动登录 + 查实时余额）。代码 `billing.ts` 保持 `-sp` 版路径是对的。
+- **如需兼顾充值记录**：需**同时查两套系统的记录**（因为互相不互通），或明确知道用户在哪套系统充值。
+- **不要**只改接口路径而保留另一套的登录链路——两套登录方式不兼容，会导致登录/查询失败。
+
+> 判断方法：不带会话请求 `/service/find/userinfo`，看它 302 到哪 —— 无 `-sp` 版跳 `weixin/thirdLogin` → `sso.scut.edu.cn/cas/login`（CAS）；`-sp` 版跳 `ecardwxnew`/`berserker-auth/oauth/authorize`（一卡通 OAuth）。
 
 ---
 
