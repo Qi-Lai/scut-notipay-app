@@ -198,10 +198,10 @@ GET /jwglxt/ticketlogin?uid=<学号>&timestamp=<秒级时间戳>&verify=<签名>
 
 | 接口 | 方法 | 说明 |
 |------|------|------|
-| `/sdms-weixin-pay-sp/service/find/userinfo` | GET | 用户信息（realName / roomName / 楼栋） |
-| `/sdms-weixin-pay-sp/service/ammeterBalance?type=1` | GET | 电表余额（leftEle / leftMoney / elePrice） |
-| `/sdms-weixin-pay-sp/service/waterBalance?type=3&systemType=1` | GET | 水费余额 |
-| `/sdms-weixin-pay-sp/service/zhixiaopay/save` | POST | 生成充值单（body `{payType,payMoney,payQuantity}`，返回微信支付 URL） |
+| `/sdms-weixin-pay/service/find/userinfo` | GET | 用户信息（realName / roomName / 楼栋） |
+| `/sdms-weixin-pay/service/ammeterBalance?type=1` | GET | 电表余额（leftEle / leftMoney / elePrice） |
+| `/sdms-weixin-pay/service/waterBalance?type=3&systemType=1` | GET | 水费余额 |
+| `/sdms-weixin-pay/service/zhixiaopay/save` | POST | 生成充值单（body `{payType,payMoney,payQuantity}`，返回微信支付 URL） |
 
 ---
 
@@ -222,12 +222,14 @@ GET /jwglxt/ticketlogin?uid=<学号>&timestamp=<秒级时间戳>&verify=<签名>
 
 | 入口 | 登录跳转 | 结论 |
 |------|---------|------|
-| `sdms-weixin-pay`（无 `-sp`） | 302 → dfyc 内部 `weixin/thirdLogin` | **老版后端**，数据/电表下发慢、可能丢单 |
-| `sdms-weixin-pay-sp`（有 `-sp`） | 302 → 一卡通/SSO | **新版后端**，走统一 SSO，快且稳 |
+| `sdms-weixin-pay-sp`（有 `-sp`） | 302 → 一卡通/SSO | **信息落后版**，数据下发/更新慢，可能丢单，**应弃用** |
+| `sdms-weixin-pay`（无 `-sp`） | 302 → dfyc 内部 `weixin/thirdLogin` | **应使用版**，数据及时、新、到账快 |
 
-**对接时应优先用 `-sp` 版接口。** 实测：无 `-sp` 版会导致「到账慢、信息更新慢、甚至没到账」。
+> ⚠️ **更正**：此前文档误将 `-sp` 版当作新版/优先版。实际以使用验证为准 —— **带 `-sp` 的版本信息落后（数据更新慢、可能丢单），应弃用；应使用无 `-sp` 版接口。**
 
-> 判断方法：不带会话去请求 `/service/find/userinfo`，看它 302 到哪 —— `-sp` 版跳统一认证/SSO，无 `-sp` 版跳 dfyc 内部 thirdLogin。
+**对接时应使用无 `-sp` 版接口**（`/sdms-weixin-pay/service/...`）。
+
+> 判断方法：不带会话去请求 `/service/find/userinfo`，看它 302 到哪 —— 无 `-sp` 版跳 dfyc 内部 `thirdLogin`，`-sp` 版跳统一认证/SSO。
 
 ---
 
