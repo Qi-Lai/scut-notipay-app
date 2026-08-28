@@ -78,6 +78,8 @@ export const obtainToken = async (
   };
 
   if (!data.access_token) {
+    // 打印学校服务器的原始拒绝原因（风控/验证码/密码错误等），便于诊断
+    console.error('[onecard] OAuth raw:', JSON.stringify(data).slice(0, 400));
     return null;
   }
 
