@@ -1,0 +1,17 @@
+[Unit]
+Description=SCUT billing cloud worker (水电费定时查询+微信提醒)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/scut-notipay/cloud
+ExecStart=/usr/bin/node worker.js
+Restart=on-failure
+RestartSec=30
+# 硬化项
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,18 @@
+{
+  "intervalHours": 6,
+  "proxy": "",
+  "push": {
+    "channel": "serverchan",
+    "sendKey": "在 https://sct.ftqq.com 微信扫码登录后获取 SendKey",
+    "minRepeatHours": 24
+  },
+  "accounts": [
+    {
+      "name": "示例同学",
+      "studentId": "2025xxxxxxxx",
+      "password": "一卡通查询密码（默认身份证后六位）",
+      "electricThreshold": 10,
+      "waterThreshold": 5
+    }
+  ]
+}

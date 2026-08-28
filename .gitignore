@@ -9,4 +9,6 @@ smoke/
 !build/icon.png
 integration-kit/node_modules/
 integration-kit/dist/
+cloud/config.json
+cloud/state.json
 .zcode/
