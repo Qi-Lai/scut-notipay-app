@@ -63,6 +63,7 @@ function evaluate(acc, bills, accState, now) {
   ].filter((c) => typeof c.threshold === 'number');
 
   const messages = [];
+  const fired = []; // 本次应推送的告警状态（推送成功后才写 lastPushAt）
   accState.alerts = accState.alerts || {};
   for (const c of checks) {
     const low = c.value <= c.threshold;
@@ -71,10 +72,12 @@ function evaluate(acc, bills, accState, now) {
     // 低于阈值时：首次立刻推；持续低则每 minRepeatH 小时提醒一次，避免刷屏
     const shouldPush = low && (!st.low || hoursSince >= minRepeatH);
     st.low = low;
-    if (shouldPush) st.lastPushAt = now;
-    if (shouldPush) messages.push(`${c.label} ${c.value.toFixed(2)} 元，已低于阈值 ${c.threshold} 元`);
+    if (shouldPush) {
+      messages.push(`${c.label} ${c.value.toFixed(2)} 元，已低于阈值 ${c.threshold} 元`);
+      fired.push(st);
+    }
   }
-  return messages;
+  return { messages, fired };
 }
 
 async function processAccount(acc, dryPush) {
@@ -89,20 +92,23 @@ async function processAccount(acc, dryPush) {
       `${acc.name || acc.cardId} ${bills.room}: 电 ${bills.electric.toFixed(2)} / 水 ${bills.water.toFixed(2)}`
     );
 
-    const alerts = evaluate(acc, bills, accState, now);
-    if (alerts.length) {
+    const { messages, fired } = evaluate(acc, bills, accState, now);
+    if (messages.length) {
       const title = `⚡️宿舍费用提醒（${bills.room}）`;
       const content =
         `🏠 ${bills.room}\n` +
-        alerts.join('\n') +
+        messages.join('\n') +
         `\n\n⚡ 电费 ${bills.electric.toFixed(2)} 元\n💧 水费 ${bills.water.toFixed(2)} 元` +
         `\n🕐 ${new Date(now).toLocaleString('zh-CN')}`;
       if (dryPush) {
         log('dry', `（dry-push）${title}\n${content}`);
+        fired.forEach((st) => (st.lastPushAt = now));
       } else {
         try {
           await sendPush(config.push, title, content);
-          log('success', `已推送: ${alerts.join('；')}`);
+          // 推送成功才记节流时间；失败不记，下轮自动重试
+          fired.forEach((st) => (st.lastPushAt = now));
+          log('success', `已推送: ${messages.join('；')}`);
         } catch (e) {
           log('error', `推送失败: ${e.message}`);
         }
@@ -116,14 +122,18 @@ async function processAccount(acc, dryPush) {
       accState.alerts = accState.alerts || {};
       const err = (accState.alerts.error = accState.alerts.error || { lastPushAt: 0 });
       if ((now - err.lastPushAt) / 3600000 >= 24) {
-        err.lastPushAt = now;
         const title = `⚠️水电费查询连续失败（${acc.name || acc.cardId}）`;
         const content = `已连续 ${accState.failCount} 次查询失败。\n最近错误: ${e.message}\n请检查查询密码是否修改、服务器到校园系统网络是否可达。`;
-        if (dryPush) log('dry', `（dry-push）${title}\n${content}`);
-        else {
+        if (dryPush) {
+          log('dry', `（dry-push）${title}\n${content}`);
+          err.lastPushAt = now;
+        } else {
           try {
             await sendPush(config.push, title, content);
-          } catch {}
+            err.lastPushAt = now; // 成功才记节流
+          } catch (pushErr) {
+            log('error', `失败告警推送未送达: ${pushErr.message}`);
+          }
         }
       }
     }
