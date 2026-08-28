@@ -48,7 +48,7 @@ const kitConfig = () => kit.defaultConfig({ proxy: config.proxy || '' });
 /** 单账号完整查询：一卡通登录 → dfyc 登录链 → 余额查询 */
 async function queryAccount(acc) {
   const kc = kitConfig();
-  const login = await kit.obtainToken(acc.studentId, acc.password, kc);
+  const login = await kit.obtainToken(acc.cardId, acc.password, kc);
   if (!login) throw new Error('一卡通登录失败（学号或查询密码错误？）');
   const jsessionid = await kit.dfycLogin(login.access_token, login.TGC, login.locSession, kc);
   return await kit.dfycQueryBills(jsessionid, kc);
@@ -78,7 +78,7 @@ function evaluate(acc, bills, accState, now) {
 }
 
 async function processAccount(acc, dryPush) {
-  const accState = (state[acc.studentId] = state[acc.studentId] || {});
+  const accState = (state[acc.cardId] = state[acc.cardId] || {});
   const now = Date.now();
   try {
     const bills = await queryAccount(acc);
@@ -86,7 +86,7 @@ async function processAccount(acc, dryPush) {
     accState.last = { electric: bills.electric, water: bills.water, room: bills.room, at: now };
     log(
       'info',
-      `${acc.name || acc.studentId} ${bills.room}: 电 ${bills.electric.toFixed(2)} / 水 ${bills.water.toFixed(2)}`
+      `${acc.name || acc.cardId} ${bills.room}: 电 ${bills.electric.toFixed(2)} / 水 ${bills.water.toFixed(2)}`
     );
 
     const alerts = evaluate(acc, bills, accState, now);
@@ -110,14 +110,14 @@ async function processAccount(acc, dryPush) {
     }
   } catch (e) {
     accState.failCount = (accState.failCount || 0) + 1;
-    log('error', `${acc.name || acc.studentId} 查询失败(连续${accState.failCount}次): ${e.message}`);
+    log('error', `${acc.name || acc.cardId} 查询失败(连续${accState.failCount}次): ${e.message}`);
     // 连续失败 ≥3 次时告警一次（24h 节流），提醒密码可能改了/网络不可达
     if (accState.failCount >= 3) {
       accState.alerts = accState.alerts || {};
       const err = (accState.alerts.error = accState.alerts.error || { lastPushAt: 0 });
       if ((now - err.lastPushAt) / 3600000 >= 24) {
         err.lastPushAt = now;
-        const title = `⚠️水电费查询连续失败（${acc.name || acc.studentId}）`;
+        const title = `⚠️水电费查询连续失败（${acc.name || acc.cardId}）`;
         const content = `已连续 ${accState.failCount} 次查询失败。\n最近错误: ${e.message}\n请检查查询密码是否修改、服务器到校园系统网络是否可达。`;
         if (dryPush) log('dry', `（dry-push）${title}\n${content}`);
         else {

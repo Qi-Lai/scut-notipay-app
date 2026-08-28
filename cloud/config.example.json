@@ -9,8 +9,8 @@
   "accounts": [
     {
       "name": "示例同学",
-      "studentId": "2025xxxxxxxx",
-      "password": "一卡通查询密码（默认身份证后六位）",
+      "cardId": "000000，注意是一卡通卡号，不是学号",
+      "password": "一卡通查询密码（默认身份证后六位，6位数字）",
       "electricThreshold": 10,
       "waterThreshold": 5
     }

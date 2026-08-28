@@ -20,7 +20,9 @@ npm --prefix ../integration-kit install
 npm --prefix ../integration-kit run build
 
 # 2) 配置
-cp config.example.json config.json   # 填入学号/查询密码/推送 key
+cp config.example.json config.json   # 填入一卡通卡号/查询密码/推送 key
+
+> ⚠️ **`cardId` 是「一卡通卡号」，不是学号！** 卡号可在「SCUT 企业微信/一卡通 App」或绑定时的信息里查到（形如 6 位数字）。填学号会报「用户名或密码错误」。
 
 # 3) 跑一轮（推送只打印不发送，用于验证）
 node worker.js --once --dry-push
