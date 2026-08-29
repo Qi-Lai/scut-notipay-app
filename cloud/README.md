@@ -80,7 +80,25 @@ node worker.js --once --dry-push    # 验证登录/查询/推送内容
 node worker.js --once               # 真实推送一条到微信
 ```
 
-### 4) 常驻（systemd）
+### 4) 调度时间（二选一配置）
+
+**固定时刻模式**（推荐）：`config.json` 里配 `queryHours`（**HHMM 格式，精确到分钟**），每天在指定时刻查询：
+
+```json
+"queryHours": ["0800", "2015"]     // 每天 08:00 和 20:15 各查一次
+```
+
+> 写法容忍 `"0800"` / `"8:00"` / `800`，统一归一化为 HHMM；非法时刻（如 25:00）自动忽略。
+
+**间隔模式**（默认）：配 `intervalHours`，启动后立即查一次，之后每 N 小时一次：
+
+```json
+"intervalHours": 6        // 每 6 小时一次（具体钟点取决于服务启动时间）
+```
+
+> 两个字段都在时**优先用 `queryHours`**。改完配置要重启服务：`sudo systemctl restart scut-billing`
+
+### 5) 常驻（systemd）
 
 ```bash
 sudo cp scut-billing.service /etc/systemd/system/
@@ -90,7 +108,7 @@ systemctl status scut-billing        # 确认 active (running)
 journalctl -u scut-billing -f        # 看实时日志
 ```
 
-> 也可不用常驻，改用系统 crontab：`0 */6 * * * cd /opt/scut-notipay/cloud && /usr/bin/node worker.js --once`
+> 也可不用常驻，改用系统 crontab（固定时刻的另一种写法）：`0 8,20 * * * cd /opt/scut-notipay/cloud && /usr/bin/node worker.js --once`
 
 ## 安全注意
 

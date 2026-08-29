@@ -1,4 +1,5 @@
 {
+  "queryHours": ["0800", "2015"],
   "intervalHours": 6,
   "proxy": "",
   "push": {

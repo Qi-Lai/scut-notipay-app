@@ -154,6 +154,37 @@ async function main() {
     await runOnce();
     return;
   }
+
+  // 固定时刻模式：config.queryHours = ["0800", "2015"]（HHMM，精确到分钟）
+  if (Array.isArray(config.queryHours) && config.queryHours.length) {
+    // 归一化为 HHMM：容忍 "8:00" / 800 / "0800" 等写法
+    const norm = [
+      ...new Set(
+        config.queryHours
+          .map((v) => String(v).replace(/\D/g, '').padStart(4, '0'))
+          .filter((t) => Number(t.slice(0, 2)) <= 23 && Number(t.slice(2)) <= 59)
+      )
+    ].sort();
+    if (!norm.length) {
+      log('warn', 'queryHours 配置无效（应为 HHMM，如 ["0800","2015"]），退回 intervalHours 模式');
+    } else {
+      const times = norm.map((t) => `${t.slice(0, 2)}:${t.slice(2)}`).join('、');
+      log('info', `循环模式：每天 ${times} 查询（queryHours）`);
+      let lastRunKey = ''; // 防止同一时刻重复跑
+      setInterval(async () => {
+        const now = new Date();
+        const hhmm = `${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}`;
+        if (!norm.includes(hhmm)) return;
+        const key = `${now.toDateString()} ${hhmm}`;
+        if (key === lastRunKey) return;
+        lastRunKey = key;
+        await runOnce();
+      }, 30 * 1000);
+      return;
+    }
+  }
+
+  // 间隔模式（默认）：每 intervalHours 小时一次
   const hours = config.intervalHours ?? 6;
   log('info', `循环模式：每 ${hours} 小时查询一次`);
   await runOnce();

@@ -278,6 +278,8 @@ export class NapCatManager extends EventEmitter {
    * is enabled, and uses the given token. Preserves all other fields.
    */
   configureForwardWs(uin: string, port: number, token: string): void {
+    // uin 会拼进文件路径，必须强校验（纯数字 QQ 号），杜绝路径注入
+    if (!/^\d{5,12}$/.test(uin)) throw new Error('uin 必须是纯数字 QQ 号');
     const conf = this.detected?.configDir;
     if (!conf) throw new Error('NapCat 目录未找到');
     const file = path.join(conf, `onebot11_${uin}.json`);
